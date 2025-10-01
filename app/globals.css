@@ -1,0 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --radius: 0.75rem; }
+html, body { height: 100%; }
