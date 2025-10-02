@@ -12,6 +12,7 @@ function AuthPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const next = searchParams.get("next") || "/views"
+  const error = searchParams.get("error")
 
   useEffect(() => {
     const checkSession = async () => {
@@ -27,12 +28,26 @@ function AuthPageInner() {
     const { data: { subscription } } = supabaseBrowser().auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
         // User just signed in (including after email confirmation)
-        router.replace(next)
+        // Check if they have a survey draft to complete
+        const draft = localStorage.getItem("nexo_survey_draft_v1")
+        if (draft) {
+          // They have a draft, redirect to complete it
+          router.replace("/survey/complete")
+        } else {
+          // No draft, go to the next page
+          router.replace(next)
+        }
       }
     })
 
     return () => subscription.unsubscribe()
   }, [router, next])
+
+  useEffect(() => {
+    if (error === "callback_failed") {
+      setMessage("There was an issue completing your sign in. Please try again.")
+    }
+  }, [error])
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -65,72 +80,81 @@ function AuthPageInner() {
   }
 
   return (
-    <main className="mx-auto max-w-md p-4">
-      <h1 className="mb-2 text-xl font-semibold">
-        {isSignUp ? "Create Account" : "Sign In"}
-      </h1>
-      <p className="mb-6 text-sm text-neutral-600">
-        {isSignUp 
-          ? "Sign up to save your survey results and build your political profile."
-          : "Sign in to access your political views and continue where you left off."
-        }
-      </p>
-
-      <form onSubmit={handleAuth} className="space-y-4">
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium mb-1">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-            placeholder="your@email.com"
-          />
+    <div className="min-h-screen bg-white flex items-center justify-center px-4">
+      <main className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <h1 className="mb-3 text-3xl font-bold text-black">Nexo</h1>
+          <p className="text-lg text-neutral-600 mb-2">Your views. Your voice. Our party.</p>
         </div>
 
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium mb-1">
-            Password
-          </label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-            placeholder="••••••••"
-          />
-        </div>
+        <div className="rounded-2xl border border-neutral-200 p-6">
+          <h2 className="mb-2 text-xl font-semibold text-center">
+            {isSignUp ? "Create Account" : "Welcome Back"}
+          </h2>
+          <p className="mb-6 text-sm text-neutral-600 text-center">
+            {isSignUp 
+              ? "Sign up to save your survey results and access your political profile."
+              : "Sign in to access your saved political profile and continue where you left off."
+            }
+          </p>
 
-        {message && (
-          <div className={`text-sm ${message.includes("error") || message.includes("Error") ? "text-red-600" : "text-green-600"}`}>
-            {message}
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium mb-2">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                placeholder="your@email.com"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium mb-2">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                placeholder="••••••••"
+              />
+            </div>
+
+            {message && (
+              <div className={`text-sm ${message.includes("error") || message.includes("Error") ? "text-red-600" : "text-green-600"}`}>
+                {message}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="h-11 w-full rounded-lg bg-black text-white disabled:opacity-50"
+            >
+              {loading ? "Loading..." : (isSignUp ? "Create Account" : "Sign In")}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-sm text-neutral-600 underline"
+            >
+              {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
+            </button>
           </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="h-11 w-full rounded-lg bg-black text-white disabled:opacity-50"
-        >
-          {loading ? "Loading..." : (isSignUp ? "Create Account" : "Sign In")}
-        </button>
-      </form>
-
-      <div className="mt-6 text-center">
-        <button
-          onClick={() => setIsSignUp(!isSignUp)}
-          className="text-sm text-neutral-600 underline"
-        >
-          {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
-        </button>
-      </div>
-    </main>
+        </div>
+      </main>
+    </div>
   )
 }
 

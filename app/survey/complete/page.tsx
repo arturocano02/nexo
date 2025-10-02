@@ -57,30 +57,62 @@ function SurveyCompletePageInner() {
   }, [router])
 
   return (
-    <main className="mx-auto max-w-md p-4">
-      <h1 className="mb-2 text-xl font-semibold">Completing your survey...</h1>
-      <p className="text-sm text-neutral-600">
-        {status === "submitting" && "Submitting your answers and building your political profile..."}
-        {status === "done" && "Redirecting to your results..."}
-        {status === "error" && `We hit a snag: ${msg}`}
-      </p>
-      {status === "error" && (
-        <div className="mt-4 space-y-2">
-          <button 
-            className="h-11 rounded-lg bg-black px-4 text-white" 
-            onClick={() => router.push("/survey")}
-          >
-            Back to survey
-          </button>
-          <button 
-            className="h-11 rounded-lg border border-neutral-300 px-4 text-neutral-700" 
-            onClick={() => router.push("/views")}
-          >
-            Go to results
-          </button>
+    <div className="min-h-screen bg-white flex items-center justify-center px-4">
+      <main className="w-full max-w-sm text-center">
+        <div className="mb-6">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">✓</span>
+          </div>
+          <h1 className="text-xl font-semibold mb-2">Almost Done!</h1>
         </div>
-      )}
-    </main>
+
+        <div className="space-y-4">
+          {status === "submitting" && (
+            <div className="space-y-3">
+              <p className="text-sm text-neutral-600">
+                Submitting your answers and building your political profile...
+              </p>
+              <div className="w-full bg-neutral-200 rounded-full h-2">
+                <div className="bg-black h-2 rounded-full animate-pulse" style={{ width: "60%" }}></div>
+              </div>
+            </div>
+          )}
+
+          {status === "done" && (
+            <div className="space-y-3">
+              <p className="text-sm text-green-600 font-medium">
+                ✓ Survey completed successfully!
+              </p>
+              <p className="text-sm text-neutral-600">
+                Redirecting to your results...
+              </p>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="space-y-4">
+              <p className="text-sm text-red-600">
+                We hit a snag: {msg}
+              </p>
+              <div className="space-y-2">
+                <button 
+                  className="w-full h-11 rounded-lg bg-black px-4 text-white" 
+                  onClick={() => router.push("/survey")}
+                >
+                  Retry Survey
+                </button>
+                <button 
+                  className="w-full h-11 rounded-lg border border-neutral-300 px-4 text-neutral-700" 
+                  onClick={() => router.push("/views")}
+                >
+                  Go to Results
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
   )
 }
 

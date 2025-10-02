@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { analyzeToViews } from "@/src/lib/ai/analyzeToViews"
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 // Create a client bound to the user's JWT so RLS auth.uid() works
 function supabaseFromAuthHeader(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -29,13 +32,11 @@ export async function POST(req: NextRequest) {
     if (meErr || !me?.user) return NextResponse.json({ error: "Invalid session" }, { status: 401 })
     const userId = me.user.id
 
-    // 1) Store raw survey
-    const insertPayload: any = { user_id: userId }
-    for (const [k, v] of Object.entries(answers as Record<string, {choice?:string; text?:string}>)) {
-      insertPayload[`${k}`] = v.text ?? null
-      insertPayload[`${k}_choice`] = v.choice ?? null
-    }
-    const { error: sErr } = await supa.from("survey_responses").insert(insertPayload)
+    // 1) Store raw survey in JSONB format
+    const { error: sErr } = await supa.from("survey_responses").insert({
+      user_id: userId,
+      responses: answers
+    })
     if (sErr) throw sErr
 
     // 2) Analyze to views

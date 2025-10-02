@@ -45,7 +45,11 @@ export async function POST(_req: NextRequest) {
     id: true,
     member_count,
     pillar_means,
-    top_issues
+    top_issues,
+    compass_distribution: { bins: { x: [], y: [], counts: [] } },
+    party_summary: "No data available yet. Complete the survey and refresh party data to see insights.",
+    top_contributor: {},
+    updated_at: new Date().toISOString()
   })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

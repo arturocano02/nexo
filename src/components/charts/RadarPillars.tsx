@@ -17,11 +17,15 @@ const PILLAR_LABELS: Record<string, string> = {
 }
 
 export default function RadarPillars({ pillars }: RadarPillarsProps) {
+  console.log("RadarPillars received pillars:", pillars)
+  
   // Transform data for Recharts
   const data = Object.entries(pillars).map(([key, value]) => ({
     pillar: PILLAR_LABELS[key] || key,
     score: Math.round(value.score)
   }))
+  
+  console.log("RadarPillars transformed data:", data)
 
   // Create aria-label for accessibility
   const ariaLabel = `Pillars radar: ${data.map(d => `${d.pillar} ${d.score}`).join(", ")}`

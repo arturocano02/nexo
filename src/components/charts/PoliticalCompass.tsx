@@ -6,14 +6,14 @@ interface PoliticalCompassProps {
   point: { x: number; y: number }
 }
 
-// Canadian political parties data for reference
+// UK political parties data for reference
 const PARTIES = [
-  { name: "People's Party", x: 85, y: 60, color: "#dc2626" },
-  { name: "Conservative", x: 70, y: 40, color: "#1f2937" },
-  { name: "Liberal", x: 20, y: 30, color: "#ea580c" },
-  { name: "Green", x: 10, y: -10, color: "#16a34a" },
-  { name: "Bloc Québécois", x: -20, y: -20, color: "#0ea5e9" },
-  { name: "NDP", x: -40, y: -30, color: "#dc2626" }
+  { name: "Conservative", x: 70, y: 50, color: "#0087DC" },
+  { name: "Labour", x: -30, y: 20, color: "#E4003B" },
+  { name: "Liberal Democrats", x: -10, y: -20, color: "#FDBB30" },
+  { name: "Green", x: -60, y: -40, color: "#008066" },
+  { name: "SNP", x: -40, y: 10, color: "#FFFF00" },
+  { name: "Reform UK", x: 80, y: 70, color: "#00AEEF" }
 ]
 
 export default function PoliticalCompass({ point }: PoliticalCompassProps) {
@@ -64,13 +64,13 @@ export default function PoliticalCompass({ point }: PoliticalCompassProps) {
             />
           ))}
           
-          {/* User's position */}
+          {/* User's position - make it very distinct */}
           <Scatter
             data={data}
-            fill="#000"
-            r={10}
+            fill="#FF6B6B"
+            r={12}
             stroke="#fff"
-            strokeWidth={2}
+            strokeWidth={3}
           />
           
           <Tooltip
@@ -101,24 +101,38 @@ export default function PoliticalCompass({ point }: PoliticalCompassProps) {
       </div>
       
       {/* Legend */}
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-        <div className="space-y-1">
-          <div className="font-medium text-neutral-700">Parties (Reference)</div>
-          {PARTIES.slice(0, 3).map((party) => (
-            <div key={party.name} className="flex items-center gap-2">
-              <div 
-                className="w-3 h-3 rounded-full" 
-                style={{ backgroundColor: party.color }}
-              />
-              <span className="text-neutral-600">{party.name}</span>
-            </div>
-          ))}
+      <div className="mt-4 space-y-3">
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-red-100 rounded-full">
+            <div className="w-4 h-4 rounded-full bg-red-400 border-2 border-white" />
+            <span className="text-sm font-semibold text-red-700">Your Position</span>
+          </div>
         </div>
-        <div className="space-y-1">
-          <div className="font-medium text-neutral-700">Your Position</div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-black border-2 border-white" />
-            <span className="text-neutral-600">You</span>
+        
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="space-y-1">
+            <div className="font-medium text-neutral-700">UK Political Parties</div>
+            {PARTIES.slice(0, 3).map((party) => (
+              <div key={party.name} className="flex items-center gap-2">
+                <div 
+                  className="w-3 h-3 rounded-full border border-neutral-300" 
+                  style={{ backgroundColor: party.color }}
+                />
+                <span className="text-neutral-600 text-xs">{party.name}</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-1">
+            <div className="font-medium text-neutral-700">More Parties</div>
+            {PARTIES.slice(3).map((party) => (
+              <div key={party.name} className="flex items-center gap-2">
+                <div 
+                  className="w-3 h-3 rounded-full border border-neutral-300" 
+                  style={{ backgroundColor: party.color }}
+                />
+                <span className="text-neutral-600 text-xs">{party.name}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
