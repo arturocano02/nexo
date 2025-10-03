@@ -31,6 +31,52 @@ const ChatRequestSchema = z.object({
 // Rate limiting (in-memory for dev)
 const rateLimit = new Map<string, { count: number; resetTime: number }>()
 
+// Topic inference keywords for fallback
+const TOPIC_KEYWORDS = {
+  'immigration': ['immigration', 'migrants', 'asylum', 'refugees', 'borders', 'visa'],
+  'housing': ['housing', 'homes', 'homeless', 'rent', 'mortgage', 'property', 'affordable housing'],
+  'nhs': ['nhs', 'health', 'healthcare', 'hospitals', 'doctors', 'nurses', 'medical'],
+  'economy': ['economy', 'economic', 'recession', 'inflation', 'growth', 'gdp', 'budget'],
+  'education': ['education', 'schools', 'universities', 'students', 'teachers', 'tuition'],
+  'environment': ['environment', 'climate', 'green', 'carbon', 'renewable', 'pollution'],
+  'taxation': ['tax', 'taxes', 'taxation', 'income tax', 'corporation tax', 'vat'],
+  'crime': ['crime', 'police', 'justice', 'prisons', 'criminal', 'safety'],
+  'foreign_policy': ['foreign policy', 'international', 'diplomacy', 'trade deals', 'alliances'],
+  'brexit': ['brexit', 'eu', 'europe', 'single market', 'customs union'],
+  'welfare': ['welfare', 'benefits', 'universal credit', 'social security', 'poverty'],
+  'defense': ['defense', 'military', 'armed forces', 'nato', 'security']
+}
+
+// Parse topic tag from AI response
+function parseTopicTag(content: string): { topic: string; confidence: number; cleanContent: string } {
+  const tagRegex = /\[\[topic:\s*([^;\]]+)(?:;\s*confidence:\s*([0-9.]+))?\]\]$/i
+  const match = content.match(tagRegex)
+  
+  if (match) {
+    const topic = match[1].trim().toLowerCase()
+    const confidence = match[2] ? parseFloat(match[2]) : 0.8
+    const cleanContent = content.replace(tagRegex, '').trim()
+    return { topic, confidence, cleanContent }
+  }
+  
+  return { topic: '', confidence: 0, cleanContent: content }
+}
+
+// Infer topic from user message using keyword matching
+function inferTopicFromMessage(message: string): { topic: string; confidence: number } {
+  const lowerMessage = message.toLowerCase()
+  
+  for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+    for (const keyword of keywords) {
+      if (lowerMessage.includes(keyword)) {
+        return { topic, confidence: 0.7 }
+      }
+    }
+  }
+  
+  return { topic: 'general', confidence: 0.3 }
+}
+
 // Web search function
 async function searchWeb(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
   try {
@@ -273,9 +319,14 @@ Include links next to any referenced claims.
 
 No closing question is required. Ask a short follow-up only if it clearly advances the debate.
 
-Append a compact bracketed tag for logging the inferred topic, for example [topic housing] or [topic gaza].
+IMPORTANT: At the very end of your response, append a hidden metadata tag for backend tracking:
+[[topic: <topic_slug>; confidence: <0-1>]]
 
-EXAMPLE: If user says "i don't care about trade, let's discuss homeless people" - IMMEDIATELY switch to homelessness. If they say "are you even listening?" - apologize and engage with their current topic.`
+This tag is for backend analytics only and will be stripped from the user-facing content. Do not include any visible bracketed tags in your response.
+
+Topic examples: immigration, housing, nhs, economy, education, environment, taxation, crime, foreign_policy, brexit, welfare, defense, etc.
+
+EXAMPLE: If user says "i don't care about trade, let's discuss homeless people" - IMMEDIATELY switch to homelessness and end with [[topic: housing; confidence: 0.9]]. If they say "are you even listening?" - apologize and engage with their current topic.`
 
     // Prepare conversation history for OpenAI
     const conversationHistory = recentMessages?.map(msg => ({
@@ -299,24 +350,58 @@ EXAMPLE: If user says "i don't care about trade, let's discuss homeless people" 
       throw new Error("Failed to get response from OpenAI")
     }
 
-    // Store AI response
-    const { error: aiMsgError } = await supa
+    // Parse topic tag from AI response
+    const { topic: aiTopic, confidence: aiConfidence, cleanContent } = parseTopicTag(aiResponse)
+    
+    // Use AI topic if available, otherwise infer from user message
+    let finalTopic = aiTopic
+    let finalConfidence = aiConfidence
+    
+    if (!finalTopic) {
+      const inferred = inferTopicFromMessage(message)
+      finalTopic = inferred.topic
+      finalConfidence = inferred.confidence
+    }
+    
+    console.log(`[Chat] Topic inference - AI: ${aiTopic} (${aiConfidence}), Final: ${finalTopic} (${finalConfidence})`)
+
+    // Store AI response (with cleaned content)
+    const { data: aiMessage, error: aiMsgError } = await supa
       .from("messages")
       .insert({
         conversation_id: conversation.id,
         role: "assistant",
-        content: aiResponse
+        content: cleanContent
       })
+      .select("id")
+      .single()
 
     if (aiMsgError) {
       throw aiMsgError
+    }
+
+    // Store topic metadata
+    if (finalTopic && aiMessage?.id) {
+      const { error: topicError } = await supa
+        .from("message_topics")
+        .insert({
+          message_id: aiMessage.id,
+          user_id: userId,
+          topic: finalTopic,
+          confidence: finalConfidence
+        })
+      
+      if (topicError) {
+        console.error("Failed to store topic metadata:", topicError)
+        // Don't throw - topic storage is not critical
+      }
     }
 
     console.log(`[Chat] Generated response for user ${userId}`)
 
     return NextResponse.json({
       success: true,
-      response: aiResponse,
+      response: cleanContent,
       conversationId: conversation.id,
       webResults: webResults.length > 0 ? webResults : undefined
     })
