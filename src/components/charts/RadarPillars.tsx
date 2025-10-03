@@ -17,15 +17,60 @@ const PILLAR_LABELS: Record<string, string> = {
 }
 
 export default function RadarPillars({ pillars }: RadarPillarsProps) {
-  console.log("RadarPillars received pillars:", pillars)
+  // Add safety checks for undefined or invalid data
+  if (!pillars || typeof pillars !== 'object') {
+    return (
+      <div className="w-full text-center py-8">
+        <p className="text-sm text-neutral-500">No pillar data available</p>
+      </div>
+    )
+  }
+
+  // Debug each pillar entry (only in development)
+  if (process.env.NODE_ENV === 'development') {
+    console.log("RadarPillars received pillars:", pillars)
+  }
   
-  // Transform data for Recharts
-  const data = Object.entries(pillars).map(([key, value]) => ({
-    pillar: PILLAR_LABELS[key] || key,
-    score: Math.round(value.score)
-  }))
+  // Transform data for Recharts with validation
+  const data = Object.entries(pillars)
+    .filter(([key, value]) => {
+      // Handle different data structures - score might be an object with a score property
+      let scoreValue = value?.score
+      if (typeof scoreValue === 'object' && scoreValue !== null && 'score' in scoreValue) {
+        scoreValue = (scoreValue as any).score
+      }
+      
+      const isValid = value && typeof scoreValue === 'number' && !isNaN(scoreValue)
+      if (!isValid && process.env.NODE_ENV === 'development') {
+        console.log(`Filtering out invalid pillar ${key}:`, value, `extracted score: ${scoreValue}`)
+      }
+      return isValid
+    })
+    .map(([key, value]) => {
+      // Handle different data structures - score might be an object with a score property
+      let scoreValue = value.score
+      if (typeof scoreValue === 'object' && scoreValue !== null && 'score' in scoreValue) {
+        scoreValue = (scoreValue as any).score
+      }
+      
+      return {
+        pillar: PILLAR_LABELS[key] || key,
+        score: Math.round(Math.max(0, Math.min(100, scoreValue)))
+      }
+    })
   
-  console.log("RadarPillars transformed data:", data)
+  if (process.env.NODE_ENV === 'development' && data.length === 0) {
+    console.log("RadarPillars: No valid pillar data available")
+  }
+
+  // Check if we have valid data to display
+  if (data.length === 0) {
+    return (
+      <div className="w-full text-center py-8">
+        <p className="text-sm text-neutral-500">No valid pillar data available</p>
+      </div>
+    )
+  }
 
   // Create aria-label for accessibility
   const ariaLabel = `Pillars radar: ${data.map(d => `${d.pillar} ${d.score}`).join(", ")}`
@@ -53,6 +98,7 @@ export default function RadarPillars({ pillars }: RadarPillarsProps) {
             fill="#000"
             fillOpacity={0.15}
             strokeWidth={2}
+            className="animate-pulse"
           />
           <Tooltip
             formatter={(value: number) => [value, "Score"]}

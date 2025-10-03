@@ -7,12 +7,19 @@ import PillarChart from "@/src/components/PillarChart"
 import RadarPillars from "@/src/components/charts/RadarPillars"
 import PoliticalCompass from "@/src/components/charts/PoliticalCompass"
 import CompassDistribution from "@/src/components/charts/CompassDistribution"
+import AdvancedPoliticalProfile from "@/src/components/AdvancedPoliticalProfile"
+import DevBanner from "@/src/components/DevBanner"
+import RefreshAnimation from "@/src/components/RefreshAnimation"
+import PageTransition, { FadeIn, SlideIn } from "@/src/components/PageTransition"
+import { ChartSkeleton, CardSkeleton, PillarSkeleton } from "@/src/components/LoadingSkeleton"
 import { deriveCompass } from "@/src/lib/derive/compass"
 import toast from "react-hot-toast"
+import { trackPageView, trackViewsEvent, trackError } from "@/src/lib/analytics"
 
 type Snapshot = {
   pillars: Record<string, { score:number; rationale:string }>
   top_issues: { title:string; summary:string }[]
+  advanced?: any
 }
 type Aggregate = {
   member_count: number
@@ -50,6 +57,7 @@ function ViewsInner() {
   const [lastRefresh, setLastRefresh] = useState<{ changes: any; timestamp: number } | null>(null)
   const [summary, setSummary] = useState<any>(null)
   const [refreshingParty, setRefreshingParty] = useState(false)
+  const [showRefreshAnimation, setShowRefreshAnimation] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
@@ -112,12 +120,23 @@ function ViewsInner() {
 
   useEffect(() => {
     loadData()
+    trackPageView('views')
+    
+    // Auto-refresh data after a short delay to ensure latest data is loaded
+    // This helps when coming from survey completion
+    const refreshTimer = setTimeout(() => {
+      loadData()
+    }, 2000)
+    
+    return () => clearTimeout(refreshTimer)
   }, [])
 
   const handleRefreshViews = async () => {
     if (refreshing) return
 
     setRefreshing(true)
+    setShowRefreshAnimation(true)
+    
     try {
       const supa = supabaseBrowser()
       const { data: { session } } = await supa.auth.getSession()
@@ -127,15 +146,15 @@ function ViewsInner() {
         return
       }
 
-      const response = await fetch("/api/views/refresh", {
+      const response = await fetch("/api/views/refresh-since", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          lookbackDays: 7,
-          maxMessages: 30
+          maxMessages: 200,
+          lookbackDays: 30
         })
       })
 
@@ -158,16 +177,19 @@ function ViewsInner() {
         console.log("Setting new snapshot:", result.snapshot)
         setMine(result.snapshot)
       }
-      if (result.summary) {
-        console.log("Setting new summary:", result.summary)
-        setSummary(result.summary)
-      }
       
       // Reload all data to ensure UI is in sync
       await loadData()
       
+      // Track successful refresh
+      trackViewsEvent('VIEWS_REFRESHED', 'success')
+      
       // Show success toast
-      toast.success("Views refreshed")
+      if (result.processedCount === 0) {
+        toast.success("No new messages since last refresh")
+      } else {
+        toast.success(`Views refreshed (${result.processedCount} messages processed)`)
+      }
       
       // Show changes for 5 seconds
       if (result.changes) {
@@ -183,16 +205,24 @@ function ViewsInner() {
 
     } catch (error: any) {
       console.error("Refresh error:", error)
+      trackError('views_refresh_failed', error.message)
       toast.error(error.message || "Failed to refresh views")
     } finally {
       setRefreshing(false)
+      setShowRefreshAnimation(false)
     }
+  }
+
+  const handleRefreshAnimationComplete = () => {
+    setShowRefreshAnimation(false)
   }
 
   const handleRefreshParty = async () => {
     if (refreshingParty) return
 
     setRefreshingParty(true)
+    setShowRefreshAnimation(true)
+    
     try {
       const supa = supabaseBrowser()
       const { data: { session } } = await supa.auth.getSession()
@@ -220,6 +250,9 @@ function ViewsInner() {
       // Update local state with new aggregates
       setParty(result.aggregates)
       
+      // Track successful party refresh
+      trackViewsEvent('PARTY_REFRESHED', 'success')
+      
       // Show success toast
       toast.success("Party updated")
       
@@ -228,9 +261,11 @@ function ViewsInner() {
 
     } catch (error: any) {
       console.error("Party refresh error:", error)
+      trackError('party_refresh_failed', error.message)
       toast.error(error.message || "Failed to refresh party data")
     } finally {
       setRefreshingParty(false)
+      setShowRefreshAnimation(false)
     }
   }
 
@@ -290,7 +325,10 @@ function ViewsInner() {
                   ? "bg-black text-white" 
                   : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
               }`}
-              onClick={() => setTab("mine")}
+              onClick={() => {
+                setTab("mine")
+                trackViewsEvent('VIEWS_TAB_SWITCHED', 'mine')
+              }}
             >
               Mine
             </button>
@@ -300,7 +338,10 @@ function ViewsInner() {
                   ? "bg-black text-white" 
                   : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
               }`}
-              onClick={() => setTab("party")}
+              onClick={() => {
+                setTab("party")
+                trackViewsEvent('VIEWS_TAB_SWITCHED', 'party')
+              }}
             >
               Party
             </button>
@@ -313,106 +354,144 @@ function ViewsInner() {
         className="px-4 py-6"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 4rem)' }}
       >
-        {loading && <p className="text-sm text-neutral-600">Loading…</p>}
+        {loading && (
+          <div className="space-y-6">
+            <FadeIn delay={100}>
+              <CardSkeleton />
+            </FadeIn>
+            <FadeIn delay={200}>
+              <ChartSkeleton />
+            </FadeIn>
+            <FadeIn delay={300}>
+              <PillarSkeleton />
+            </FadeIn>
+          </div>
+        )}
 
         {!loading && tab === "mine" && (
-          <>
+          <PageTransition>
             {!mine ? (
-              <div className="text-sm text-neutral-600">No snapshot yet. Complete the survey to generate your starter profile.</div>
+              <FadeIn>
+                <div className="text-sm text-neutral-600">No snapshot yet. Complete the survey to generate your starter profile.</div>
+              </FadeIn>
             ) : (
               <div className="space-y-6">
                 {/* Top Issues */}
-                <section className="rounded-2xl border border-neutral-200 p-4">
-                  <h2 className="mb-3 text-sm font-semibold">Top issues</h2>
-                  <ul className="space-y-2">
-                    {mine.top_issues.slice(0,3).map((it, i) => (
-                      <li key={i} className="text-sm">
-                        <span className="font-medium">{it.title}</span>
-                        <span className="text-neutral-600"> — {it.summary}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
+                <FadeIn delay={100}>
+                  <section className="rounded-2xl border border-neutral-200 p-4 hover:shadow-md transition-shadow duration-300">
+                    <h2 className="mb-3 text-sm font-semibold">Top issues</h2>
+                    <ul className="space-y-2">
+                      {mine.top_issues.slice(0,3).map((it, i) => (
+                        <li key={i} className="text-sm">
+                          <span className="font-medium">{it.title}</span>
+                          <span className="text-neutral-600"> — {it.summary}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </FadeIn>
 
                 {/* Radar Chart */}
-                <section className="rounded-2xl border border-neutral-200 p-4">
-                  <h2 className="mb-3 text-sm font-semibold">Pillars (Radar)</h2>
-                  {mine.pillars && Object.keys(mine.pillars).length > 0 ? (
-                    <RadarPillars pillars={mine.pillars} />
-                  ) : (
-                    <div className="text-sm text-neutral-500 text-center py-8">
-                      No pillar data available. Complete the survey or refresh your views.
-                    </div>
-                  )}
-                </section>
+                <FadeIn delay={200}>
+                  <section className="rounded-2xl border border-neutral-200 p-4 hover:shadow-md transition-shadow duration-300">
+                    <h2 className="mb-3 text-sm font-semibold">Pillars (Radar)</h2>
+                    {mine.pillars && Object.keys(mine.pillars).length > 0 ? (
+                      <RadarPillars pillars={mine.pillars} />
+                    ) : (
+                      <div className="text-sm text-neutral-500 text-center py-8">
+                        No pillar data available. Complete the survey or refresh your views.
+                      </div>
+                    )}
+                  </section>
+                </FadeIn>
 
                 {/* Bar Chart */}
-                <section className="rounded-2xl border border-neutral-200 p-4">
-                  <h2 className="mb-3 text-sm font-semibold">Pillars (Bars)</h2>
-                  {mine.pillars && Object.keys(mine.pillars).length > 0 ? (
-                    <PillarChart pillars={mine.pillars} />
-                  ) : (
-                    <div className="text-sm text-neutral-500 text-center py-8">
-                      No pillar data available. Complete the survey or refresh your views.
-                    </div>
-                  )}
-                </section>
+                <FadeIn delay={300}>
+                  <section className="rounded-2xl border border-neutral-200 p-4 hover:shadow-md transition-shadow duration-300">
+                    <h2 className="mb-3 text-sm font-semibold">Pillars (Bars)</h2>
+                    {mine.pillars && Object.keys(mine.pillars).length > 0 ? (
+                      <PillarChart pillars={mine.pillars} />
+                    ) : (
+                      <div className="text-sm text-neutral-500 text-center py-8">
+                        No pillar data available. Complete the survey or refresh your views.
+                      </div>
+                    )}
+                  </section>
+                </FadeIn>
 
                 {/* Political Compass */}
-                <section className="rounded-2xl border border-neutral-200 p-4">
-                  <h2 className="mb-3 text-sm font-semibold">Political axis</h2>
-                  <PoliticalCompass point={deriveCompass(mine.pillars)} />
-                </section>
+                <FadeIn delay={400}>
+                  <section className="rounded-2xl border border-neutral-200 p-4 hover:shadow-md transition-shadow duration-300">
+                    <h2 className="mb-3 text-sm font-semibold">Political axis</h2>
+                    <PoliticalCompass point={deriveCompass(mine.pillars)} />
+                  </section>
+                </FadeIn>
+
+                {/* Advanced Political Profile */}
+                {mine.advanced && (
+                  <FadeIn delay={500}>
+                    <section className="rounded-2xl border border-neutral-200 p-4 bg-gradient-to-br from-blue-50 to-purple-50 hover:shadow-md transition-shadow duration-300">
+                      <h2 className="mb-3 text-sm font-semibold">Advanced Political Analysis</h2>
+                      <AdvancedPoliticalProfile profile={mine.advanced} />
+                    </section>
+                  </FadeIn>
+                )}
 
                 {/* Summary Card */}
                 {summary && (
-                  <section className="rounded-2xl border border-neutral-200 p-4 bg-neutral-50">
-                    <h2 className="mb-3 text-sm font-semibold">Recent Conversation Summary</h2>
-                    <div className="space-y-3 text-xs text-neutral-700">
-                      {summary.perPillar && Object.entries(summary.perPillar).map(([pillar, text]) => (
-                        <div key={pillar}>
-                          <span className="font-medium capitalize">{pillar}:</span> {text as string}
-                        </div>
-                      ))}
-                      {summary.issues && summary.issues.length > 0 && (
-                        <div>
-                          <span className="font-medium">Key Issues:</span>
-                          <ul className="mt-1 space-y-1">
-                            {summary.issues.map((issue: any, index: number) => (
-                              <li key={index} className="flex items-start gap-2">
-                                <span className="text-neutral-400">•</span>
-                                <div>
-                                  <div className="font-medium">{issue.title}</div>
-                                  <div className="text-neutral-600">{issue.summary}</div>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  </section>
+                  <FadeIn delay={600}>
+                    <section className="rounded-2xl border border-neutral-200 p-4 bg-neutral-50 hover:shadow-md transition-shadow duration-300">
+                      <h2 className="mb-3 text-sm font-semibold">Recent Conversation Summary</h2>
+                      <div className="space-y-3 text-xs text-neutral-700">
+                        {summary.perPillar && Object.entries(summary.perPillar).map(([pillar, text]) => (
+                          <div key={pillar}>
+                            <span className="font-medium capitalize">{pillar}:</span> {text as string}
+                          </div>
+                        ))}
+                        {summary.issues && summary.issues.length > 0 && (
+                          <div>
+                            <span className="font-medium">Key Issues:</span>
+                            <ul className="mt-1 space-y-1">
+                              {summary.issues.map((issue: any, index: number) => (
+                                <li key={index} className="flex items-start gap-2">
+                                  <span className="text-neutral-400">•</span>
+                                  <div>
+                                    <div className="font-medium">{issue.title}</div>
+                                    <div className="text-neutral-600">{issue.summary}</div>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  </FadeIn>
                 )}
               </div>
             )}
-          </>
+          </PageTransition>
         )}
 
         {!loading && tab === "party" && (
-          <>
+          <PageTransition>
             {!party ? (
-              <div className="text-center py-8">
-                <p className="text-sm text-neutral-600 mb-4">No aggregate yet. Tap 'Refresh party' to build the first snapshot.</p>
-              </div>
+              <FadeIn>
+                <div className="text-center py-8">
+                  <p className="text-sm text-neutral-600 mb-4">No aggregate yet. Tap 'Refresh party' to build the first snapshot.</p>
+                </div>
+              </FadeIn>
             ) : (
               <div className="space-y-6">
                 {/* Members Count */}
-                <section className="rounded-2xl border border-neutral-200 p-4">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-black mb-1">{party.member_count}</div>
-                    <div className="text-sm text-neutral-600">Members</div>
-                  </div>
-                </section>
+                <FadeIn delay={100}>
+                  <section className="rounded-2xl border border-neutral-200 p-4 hover:shadow-md transition-shadow duration-300">
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-black mb-1">{party.member_count}</div>
+                      <div className="text-sm text-neutral-600">Members</div>
+                    </div>
+                  </section>
+                </FadeIn>
 
                 {/* Top Issues */}
                 <section className="rounded-2xl border border-neutral-200 p-4">
@@ -436,7 +515,7 @@ function ViewsInner() {
                 </section>
 
                 {/* Compass Distribution */}
-                {party.compass_distribution && (
+                {party.compass_distribution && party.compass_distribution.bins && party.compass_distribution.bins.counts && (
                   <section className="rounded-2xl border border-neutral-200 p-4">
                     <h2 className="mb-3 text-sm font-semibold">Where people are</h2>
                     <CompassDistribution distribution={party.compass_distribution} />
@@ -469,11 +548,18 @@ function ViewsInner() {
                 )}
               </div>
             )}
-          </>
+          </PageTransition>
         )}
       </main>
 
       <Navigation />
+      
+      {/* Refresh Animation */}
+      <RefreshAnimation 
+        isVisible={showRefreshAnimation} 
+        onComplete={handleRefreshAnimationComplete}
+        isProcessing={refreshing || refreshingParty}
+      />
     </div>
   )
 }

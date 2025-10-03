@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { QUESTIONS } from "@/src/lib/survey/questions"
 import { Textarea } from "@/src/components/ui/textarea"
 import { saveDraft, loadDraft } from "@/src/lib/survey/storage"
+import { trackSurveyEvent, trackPageView } from "@/src/lib/analytics"
 
 type Answer = { choice?: string; text?: string }
 
@@ -21,6 +22,7 @@ function SurveyPageInner() {
   const progress = ((currentQuestion + 1) / QUESTIONS.length) * 100
 
   useEffect(() => {
+    trackPageView('survey')
     const draft = loadDraft()
     if (draft) {
       setAnswers(draft)
@@ -31,6 +33,8 @@ function SurveyPageInner() {
       } else {
         setCurrentQuestion(Math.max(0, lastAnsweredIndex - 1))
       }
+    } else {
+      trackSurveyEvent('SURVEY_STARTED')
     }
   }, [])
 
@@ -46,6 +50,7 @@ function SurveyPageInner() {
     if (isLastQuestion) {
       // Save draft and redirect to complete page
       saveDraft(answers)
+      trackSurveyEvent('SURVEY_COMPLETED')
       router.push("/survey/complete")
       return
     }

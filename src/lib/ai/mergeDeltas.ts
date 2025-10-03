@@ -14,12 +14,12 @@ export type Delta = z.infer<typeof DeltaSchema>
 
 export interface CurrentSnapshot {
   pillars: Record<string, { score: number; rationale: string }>
-  top_issues: Array<{ title: string; summary: string }>
+  top_issues: Array<{ title: string; summary: string; mentions?: number }>
 }
 
 export interface MergedSnapshot {
   pillars: Record<string, { score: number; rationale: string }>
-  top_issues: Array<{ title: string; summary: string }>
+  top_issues: Array<{ title: string; summary: string; mentions?: number }>
 }
 
 // Normalize title for comparison
@@ -65,16 +65,15 @@ export function mergeDeltas(
   // Apply pillar deltas
   const newPillars: Record<string, { score: number; rationale: string }> = {}
   
-  for (const [pillar, currentScore] of Object.entries({
-    ...defaultScores,
-    ...currentPillars
-  })) {
-    const deltaValue = delta.pillarsDelta[pillar] || 0
-    const newScore = Math.max(0, Math.min(100, (currentScore as number) + deltaValue))
+  const pillars = ['economy', 'social', 'environment', 'governance', 'foreign'] as const
+  for (const pillar of pillars) {
+    const base = currentSnapshot?.pillars?.[pillar]?.score ?? defaultScores[pillar]
+    const deltaValue = delta.pillarsDelta[pillar] ?? 0
+    const newScore = Math.max(0, Math.min(100, base + deltaValue))
     
     newPillars[pillar] = {
       score: newScore,
-      rationale: currentPillars[pillar]?.rationale || `Updated based on recent conversation`
+      rationale: currentSnapshot?.pillars?.[pillar]?.rationale || `Updated based on recent conversation`
     }
   }
 
@@ -89,7 +88,8 @@ export function mergeDeltas(
         if (issueDelta.summary) {
           newIssues.push({
             title: issueDelta.title,
-            summary: issueDelta.summary
+            summary: issueDelta.summary,
+            mentions: (issueDelta as any).mentions || 1
           })
         }
         break
@@ -106,13 +106,15 @@ export function mergeDeltas(
         if (updateIndex !== -1) {
           newIssues[updateIndex] = {
             title: issueDelta.title,
-            summary: issueDelta.summary || newIssues[updateIndex].summary
+            summary: issueDelta.summary || newIssues[updateIndex].summary,
+            mentions: (issueDelta as any).mentions || newIssues[updateIndex].mentions || 1
           }
         } else if (issueDelta.summary) {
           // If not found, treat as add
           newIssues.push({
             title: issueDelta.title,
-            summary: issueDelta.summary
+            summary: issueDelta.summary,
+            mentions: (issueDelta as any).mentions || 1
           })
         }
         break

@@ -47,7 +47,11 @@ function SurveyCompletePageInner() {
         // Clear the draft and redirect to results
         clearDraft()
         setStatus("done")
-        router.replace("/views")
+        
+        // Small delay to ensure data is processed, then redirect
+        setTimeout(() => {
+          router.replace("/views")
+        }, 1000)
       } catch (e: any) {
         setStatus("error")
         setMsg(e.message || "Something went wrong.")

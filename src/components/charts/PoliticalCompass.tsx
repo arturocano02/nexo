@@ -17,10 +17,25 @@ const PARTIES = [
 ]
 
 export default function PoliticalCompass({ point }: PoliticalCompassProps) {
-  const data = [{ x: point.x, y: point.y }]
+  // Add safety checks for undefined or invalid data
+  if (!point || typeof point.x !== 'number' || typeof point.y !== 'number' || isNaN(point.x) || isNaN(point.y)) {
+    return (
+      <div className="w-full text-center py-8">
+        <p className="text-sm text-neutral-500">No compass data available</p>
+      </div>
+    )
+  }
+
+  // Ensure values are within valid range
+  const validPoint = {
+    x: Math.max(-100, Math.min(100, point.x)),
+    y: Math.max(-100, Math.min(100, point.y))
+  }
+
+  const data = [{ x: validPoint.x, y: validPoint.y }]
 
   // Create aria-label for accessibility
-  const ariaLabel = `Political compass: Economic position ${Math.round(point.x)}, Social position ${Math.round(point.y)}`
+  const ariaLabel = `Political compass: Economic position ${Math.round(validPoint.x)}, Social position ${Math.round(validPoint.y)}`
 
   return (
     <div className="w-full" role="img" aria-label={ariaLabel}>
@@ -71,6 +86,7 @@ export default function PoliticalCompass({ point }: PoliticalCompassProps) {
             r={12}
             stroke="#fff"
             strokeWidth={3}
+            className="animate-pulse"
           />
           
           <Tooltip

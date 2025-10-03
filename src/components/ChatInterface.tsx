@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { supabaseBrowser } from "@/src/lib/supabase/client"
 import toast from "react-hot-toast"
+import { trackChatEvent, trackError } from "@/src/lib/analytics"
 
 interface Message {
   id: string
@@ -171,6 +172,9 @@ export default function ChatInterface({ conversationId, onViewUpdate }: ChatInte
       // Reload messages to get the real ones from the database in correct order
       await loadMessages()
 
+      // Track successful message send
+      trackChatEvent('CHAT_MESSAGE_SENT', 'success')
+      
       // Trigger view update if callback provided
       if (onViewUpdate) {
         onViewUpdate()
@@ -178,6 +182,7 @@ export default function ChatInterface({ conversationId, onViewUpdate }: ChatInte
 
     } catch (error: any) {
       console.error("Send message error:", error)
+      trackError('chat_message_failed', error.message)
       toast.error(error.message || "Failed to send message")
       
       // Remove temp message on error

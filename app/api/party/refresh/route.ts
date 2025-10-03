@@ -168,8 +168,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No user data found" }, { status: 404 })
     }
 
-    // Calculate member count
-    const memberCount = snapshots.length
+    // Calculate member count by counting unique user IDs
+    const uniqueUserIds = new Set(snapshots.map(snapshot => snapshot.user_id))
+    const memberCount = uniqueUserIds.size
 
     // Calculate pillar means
     const pillarMeans: Record<string, number> = {

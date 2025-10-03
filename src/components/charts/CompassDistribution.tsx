@@ -11,7 +11,26 @@ interface CompassDistributionProps {
 }
 
 export default function CompassDistribution({ distribution }: CompassDistributionProps) {
+  // Add safety checks for undefined data
+  if (!distribution || !distribution.bins || !distribution.bins.counts) {
+    return (
+      <div className="w-full text-center py-8">
+        <p className="text-sm text-neutral-500">No distribution data available</p>
+      </div>
+    )
+  }
+
   const { bins } = distribution
+  
+  // Ensure counts is a valid 2D array
+  if (!Array.isArray(bins.counts) || bins.counts.length === 0 || !Array.isArray(bins.counts[0])) {
+    return (
+      <div className="w-full text-center py-8">
+        <p className="text-sm text-neutral-500">Invalid distribution data format</p>
+      </div>
+    )
+  }
+
   const maxCount = Math.max(...bins.counts.flat())
   
   // Calculate total points for accessibility

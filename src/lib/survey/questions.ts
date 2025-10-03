@@ -7,57 +7,57 @@ export type SurveyQuestion = {
 export const QUESTIONS: SurveyQuestion[] = [
   {
     id: "q1",
-    prompt: "Public money first: what should government focus on most?",
+    prompt: "Economy: What should be the government's top economic priority?",
     choices: [
-      "Grow jobs and the economy",
-      "Support people most in need",
-      "Keep debt and taxes lower",
-      "Protect core public services",
-      "I don't know"
+      "Reduce inequality and support the most vulnerable",
+      "Grow the economy and create jobs for everyone",
+      "Keep taxes low and reduce government spending",
+      "Invest in infrastructure and public services",
+      "Let the market decide with minimal intervention"
     ]
   },
   {
     id: "q2",
-    prompt: "Climate and energy: what pace of change feels right?",
+    prompt: "Climate: How should the UK approach environmental challenges?",
     choices: [
-      "Strong action now, even if it costs more",
-      "Steady transition with shared costs",
-      "Balance costs with benefits carefully",
-      "Let markets lead innovation",
-      "I don't know"
+      "Take immediate, bold action regardless of cost",
+      "Gradual transition with government support",
+      "Balance environmental goals with economic growth",
+      "Focus on innovation and technology solutions",
+      "Let businesses and individuals choose their approach"
     ]
   },
   {
     id: "q3",
-    prompt: "Rights and social issues: what's your instinct?",
+    prompt: "Social issues: What's your view on social equality and rights?",
     choices: [
-      "Expand protections and equal access",
-      "Keep a similar balance as today",
-      "Let local communities decide more",
-      "Reduce government's role in social rules",
-      "I don't know"
+      "Expand protections and ensure equal opportunities for all",
+      "Maintain current protections while being practical",
+      "Let local communities decide what works for them",
+      "Reduce government involvement in social issues",
+      "Focus on individual responsibility and choice"
     ]
   },
   {
     id: "q4",
-    prompt: "How should big decisions be made?",
+    prompt: "Democracy: How should important decisions be made?",
     choices: [
-      "More direct input from citizens",
-      "Elected representatives decide",
-      "Independent experts decide",
-      "A mix of all three",
-      "I don't know"
+      "More direct democracy and citizen participation",
+      "Trust elected representatives to make decisions",
+      "Rely on independent experts and evidence",
+      "A combination of all approaches",
+      "Streamline decision-making for efficiency"
     ]
   },
   {
     id: "q5",
-    prompt: "Abroad: what matters most?",
+    prompt: "International relations: What should guide UK foreign policy?",
     choices: [
-      "Security and defence",
-      "Trade, jobs and growth",
-      "Alliances and shared values",
-      "Staying out of conflicts",
-      "I don't know"
+      "Promote human rights and democratic values globally",
+      "Focus on trade and economic partnerships",
+      "Prioritize national security and defence",
+      "Maintain alliances while staying independent",
+      "Minimize international involvement and focus domestically"
     ]
   }
 ]
