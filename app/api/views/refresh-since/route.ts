@@ -128,7 +128,20 @@ export async function POST(req: NextRequest) {
 
     // Parse request body
     const body = await req.json()
-    const { maxMessages, lookbackDays } = RefreshRequestSchema.parse(body)
+    console.log('Request body:', body)
+    
+    let maxMessages, lookbackDays
+    try {
+      const parsed = RefreshRequestSchema.parse(body)
+      maxMessages = parsed.maxMessages
+      lookbackDays = parsed.lookbackDays
+    } catch (error) {
+      console.error('Request validation error:', error)
+      return NextResponse.json({ 
+        error: 'Invalid request parameters', 
+        details: error instanceof Error ? error.message : 'Unknown validation error'
+      }, { status: 400 })
+    }
 
     // Get user's conversation or create one if it doesn't exist
     let conversation
@@ -395,10 +408,22 @@ export async function POST(req: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error("Refresh views error:", error)
+    console.error("Refresh views error:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code
+    })
+    
+    // Return more specific error information
+    const statusCode = error.status || error.statusCode || 500
     return NextResponse.json(
-      { error: error.message || "Failed to refresh views" },
-      { status: 500 }
+      { 
+        error: error.message || "Failed to refresh views",
+        code: error.code,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
+      { status: statusCode }
     )
   }
 }
