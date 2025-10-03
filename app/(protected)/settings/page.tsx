@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import RequireAuth from "@/components/RequireAuth"
 import Navigation from "@/components/Navigation"
 import { supabaseBrowser } from "@/src/lib/supabase/client"
+import { isUsernameAvailable } from "@/src/lib/utils/username"
 
 export default function SettingsPage() {
   return (
@@ -22,6 +23,9 @@ function SettingsPageInner() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
   const [showClearChatConfirm, setShowClearChatConfirm] = useState(false)
+  const [editingUsername, setEditingUsername] = useState(false)
+  const [newUsername, setNewUsername] = useState("")
+  const [usernameError, setUsernameError] = useState("")
   const router = useRouter()
 
   useEffect(() => {
@@ -97,6 +101,68 @@ function SettingsPageInner() {
       router.push("/")
     } catch (error) {
       console.error("Error signing out:", error)
+    }
+  }
+
+  const handleEditUsername = () => {
+    setEditingUsername(true)
+    setNewUsername(profile?.display_name || "")
+    setUsernameError("")
+  }
+
+  const handleCancelEditUsername = () => {
+    setEditingUsername(false)
+    setNewUsername("")
+    setUsernameError("")
+  }
+
+  const handleSaveUsername = async () => {
+    if (!newUsername.trim()) {
+      setUsernameError("Username cannot be empty")
+      return
+    }
+
+    if (newUsername.length < 3) {
+      setUsernameError("Username must be at least 3 characters")
+      return
+    }
+
+    if (newUsername.length > 20) {
+      setUsernameError("Username must be less than 20 characters")
+      return
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(newUsername)) {
+      setUsernameError("Username can only contain letters, numbers, and underscores")
+      return
+    }
+
+    try {
+      const supa = supabaseBrowser()
+      
+      // Check if username is available
+      const isAvailable = await isUsernameAvailable(newUsername, supa, user?.id)
+      
+      if (!isAvailable) {
+        setUsernameError("Username is already taken")
+        return
+      }
+
+      // Update profile with new username
+      const { error } = await supa
+        .from("profiles")
+        .update({ display_name: newUsername })
+        .eq("id", user.id)
+
+      if (error) throw error
+
+      setProfile({ ...profile, display_name: newUsername })
+      setEditingUsername(false)
+      setNewUsername("")
+      setUsernameError("")
+      setMessage("Username updated successfully!")
+    } catch (error: any) {
+      setUsernameError(error.message || "Failed to update username")
     }
   }
 
@@ -203,17 +269,52 @@ function SettingsPageInner() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Display Name</label>
-                <input
-                  type="text"
-                  value={profile?.display_name || ""}
-                  onChange={(e) => setProfile({
-                    ...profile,
-                    display_name: e.target.value
-                  })}
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                  placeholder="Your display name"
-                />
+                <label className="block text-sm font-medium mb-2">Username</label>
+                {editingUsername ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={newUsername}
+                      onChange={(e) => setNewUsername(e.target.value)}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                      placeholder="Enter new username"
+                      maxLength={20}
+                    />
+                    {usernameError && (
+                      <p className="text-xs text-red-600">{usernameError}</p>
+                    )}
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveUsername}
+                        className="flex-1 h-8 rounded-lg bg-black text-white text-sm"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelEditUsername}
+                        className="flex-1 h-8 rounded-lg border border-neutral-300 text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-neutral-700">{profile?.display_name || "No username set"}</span>
+                    <button
+                      type="button"
+                      onClick={handleEditUsername}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                )}
+                <p className="text-xs text-neutral-500 mt-1">
+                  3-20 characters, letters, numbers, and underscores only
+                </p>
               </div>
 
               {message && (

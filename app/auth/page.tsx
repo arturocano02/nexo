@@ -2,6 +2,7 @@
 import { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabaseBrowser } from "@/src/lib/supabase/client"
+import { generateUniqueUsername } from "@/src/lib/utils/username"
 import Link from "next/link"
 
 function AuthPageInner() {
@@ -64,22 +65,25 @@ function AuthPageInner() {
     
     setCheckingAccount(true)
     try {
-      const supa = supabaseBrowser()
-      const { data, error } = await supa.auth.signInWithPassword({
-        email,
-        password: 'dummy-password-to-check-account'
+      const response = await fetch('/api/auth/check-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email })
       })
       
-      // If we get a specific error about invalid credentials, account exists
-      if (error && error.message.includes('Invalid login credentials')) {
-        setAccountExists(true)
-      } else if (error && error.message.includes('Email not confirmed')) {
-        setAccountExists(true)
+      const data = await response.json()
+      
+      if (response.ok) {
+        setAccountExists(data.exists)
       } else {
-        setAccountExists(false)
+        console.error('Account check error:', data.error)
+        setAccountExists(null)
       }
     } catch (error) {
-      setAccountExists(false)
+      console.error('Account check error:', error)
+      setAccountExists(null)
     } finally {
       setCheckingAccount(false)
     }
@@ -116,11 +120,33 @@ function AuthPageInner() {
       const supa = supabaseBrowser()
       
       if (isSignUp) {
-        const { error } = await supa.auth.signUp({
+        const { data: signupData, error } = await supa.auth.signUp({
           email,
           password,
         })
         if (error) throw error
+        
+        // Create user profile with generated username
+        if (signupData.user) {
+          try {
+            const username = await generateUniqueUsername(email, supa)
+            const { error: profileError } = await supa
+              .from('profiles')
+              .insert({
+                id: signupData.user.id,
+                display_name: username
+              })
+            
+            if (profileError) {
+              console.error('Profile creation error:', profileError)
+              // Don't throw - profile can be created later
+            }
+          } catch (profileError) {
+            console.error('Profile creation error:', profileError)
+            // Don't throw - profile can be created later
+          }
+        }
+        
         setMessage("Check your email for the confirmation link!")
       } else {
         const { error } = await supa.auth.signInWithPassword({
