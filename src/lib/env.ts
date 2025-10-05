@@ -1,97 +1,113 @@
 /**
- * Centralized environment variable access with proper validation
+ * Environment variable helpers with safe server-side access
+ * Returns descriptive errors if required vars are missing
  */
 
-export interface EnvConfig {
-  OPENAI_API_KEY: string | null
-  NEXT_PUBLIC_SUPABASE_URL: string | null
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: string | null
-  NODE_ENV: 'development' | 'production' | 'test'
-}
-
+// Custom error class for environment issues
 export class EnvError extends Error {
-  constructor(message: string, public readonly key: string) {
+  constructor(public varName: string, message: string) {
     super(message)
     this.name = 'EnvError'
   }
 }
 
-function getEnvVar(key: string): string | null {
-  if (typeof window !== 'undefined') {
-    // Client-side: only access NEXT_PUBLIC_ vars
-    if (!key.startsWith('NEXT_PUBLIC_')) {
-      return null
-    }
+export function getSupabaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!url) {
+    throw new EnvError('NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL is not configured')
   }
-  return process.env[key] || null
+  return url
 }
 
-export function getEnvConfig(): EnvConfig {
-  return {
-    OPENAI_API_KEY: getEnvVar('OPENAI_API_KEY'),
-    NEXT_PUBLIC_SUPABASE_URL: getEnvVar('NEXT_PUBLIC_SUPABASE_URL'),
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
-    NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development'
+export function getSupabaseAnonKey(): string {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!key) {
+    throw new EnvError('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured')
   }
+  return key
+}
+
+// Helper to get Supabase config as an object
+export function getSupabaseConfig() {
+  return {
+    url: getSupabaseUrl(),
+    anonKey: getSupabaseAnonKey()
+  }
+}
+
+export function getSupabaseServiceRoleKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured')
+  }
+  return key
 }
 
 export function getOpenAIKey(): string | null {
-  return getEnvVar('OPENAI_API_KEY')
+  return process.env.OPENAI_API_KEY || null
 }
 
-export function getSupabaseConfig() {
-  const url = getEnvVar('NEXT_PUBLIC_SUPABASE_URL')
-  const anonKey = getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY')
-  
-  if (!url || !anonKey) {
-    throw new EnvError('Missing Supabase configuration', 'SUPABASE_CONFIG')
+export function requireOpenAIKey(): string {
+  const key = process.env.OPENAI_API_KEY
+  if (!key) {
+    throw new Error('OPENAI_API_KEY is not configured')
   }
-  
-  return { url, anonKey }
+  return key
 }
 
-/**
- * Server-side environment assertion
- * Throws typed errors for missing required keys
- */
-export function assertServerEnv(): void {
-  const config = getEnvConfig()
-  
-  if (!config.OPENAI_API_KEY) {
-    throw new EnvError('OpenAI API key is required for AI analysis', 'OPENAI_API_KEY')
-  }
-  
-  if (!config.NEXT_PUBLIC_SUPABASE_URL) {
-    throw new EnvError('Supabase URL is required', 'NEXT_PUBLIC_SUPABASE_URL')
-  }
-  
-  if (!config.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    throw new EnvError('Supabase anon key is required', 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
-  }
-}
-
-/**
- * Check if OpenAI is configured (for UI banners)
- */
 export function isOpenAIConfigured(): boolean {
-  return getOpenAIKey() !== null
+  return !!process.env.OPENAI_API_KEY
 }
 
-/**
- * Check if we're in development mode
- */
+// Client-side safe checks
+export function getClientSupabaseUrl(): string {
+  if (typeof window === 'undefined') {
+    throw new Error('getClientSupabaseUrl called on server')
+  }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!url) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is not configured')
+  }
+  return url
+}
+
+export function getClientSupabaseAnonKey(): string {
+  if (typeof window === 'undefined') {
+    throw new Error('getClientSupabaseAnonKey called on server')
+  }
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!key) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured')
+  }
+  return key
+}
+
+// Helper to check if in development mode
 export function isDevelopment(): boolean {
-  return getEnvConfig().NODE_ENV === 'development'
+  return process.env.NODE_ENV === 'development'
 }
 
-/**
- * Create a friendly error response for missing env vars
- */
+// Helper to create standard 503 response for missing env
+export function createMissingEnvResponse(varName: string) {
+  return {
+    error: `Server configuration error: ${varName} is not set`,
+    code: 'MISSING_ENV_VAR',
+    varName
+  }
+}
+
+// Helper to create env error response for API routes
 export function createEnvErrorResponse(error: EnvError) {
   return {
-    error: `Configuration error: ${error.message}`,
-    code: 'MISSING_CONFIG',
-    key: error.key
+    error: `Server configuration error: ${error.varName} is not set`,
+    code: 'MISSING_ENV_VAR',
+    varName: error.varName
   }
 }
 
+// Helper to assert all server env vars are present
+export function assertServerEnv() {
+  getSupabaseUrl()
+  getSupabaseAnonKey()
+  // OpenAI key is optional, so we don't assert it here
+}

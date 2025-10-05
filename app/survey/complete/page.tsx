@@ -88,6 +88,9 @@ function SurveyCompletePageInner() {
                 ✓ Survey completed successfully!
               </p>
               <p className="text-sm text-neutral-600">
+                Your political profile is being analyzed...
+              </p>
+              <p className="text-sm text-neutral-600">
                 Redirecting to your results...
               </p>
             </div>

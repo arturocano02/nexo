@@ -58,6 +58,7 @@ function ViewsInner() {
   const [summary, setSummary] = useState<any>(null)
   const [refreshingParty, setRefreshingParty] = useState(false)
   const [showRefreshAnimation, setShowRefreshAnimation] = useState(false)
+  const [debugAnalyzing, setDebugAnalyzing] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
@@ -70,27 +71,66 @@ function ViewsInner() {
     // my snapshot
     const { data: snap, error: snapErr } = await supa
       .from("views_snapshots")
-      .select("pillars, top_issues")
+      .select("pillars, top_issues, summary_message")
       .eq("user_id", userId)
       .maybeSingle()
     if (!snapErr) {
       console.log("Loaded snapshot:", snap)
       if (snap) {
+        console.log("Snapshot data:", JSON.stringify(snap, null, 2))
         setMine(snap as any)
       } else {
-        // No snapshot exists, create a default one
-        console.log("No snapshot found, creating default")
-        const defaultSnapshot = {
-          pillars: {
-            economy: { score: 50, rationale: "Default starting point" },
-            social: { score: 50, rationale: "Default starting point" },
-            environment: { score: 50, rationale: "Default starting point" },
-            governance: { score: 50, rationale: "Default starting point" },
-            foreign: { score: 50, rationale: "Default starting point" }
-          },
-          top_issues: []
+        // No snapshot exists, check if user has completed survey
+        console.log("No snapshot found, checking for survey data")
+        const { data: surveyData } = await supa
+          .from("survey_responses")
+          .select("responses")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        
+        if (surveyData) {
+          console.log("Found survey data, analyzing...")
+          // Import analyzeToViews dynamically to avoid circular imports
+          const { analyzeToViews } = await import("@/src/lib/ai/analyzeToViews")
+          try {
+            const analyzedSnapshot = await analyzeToViews({ answers: surveyData.responses })
+            console.log("Survey analysis completed:", analyzedSnapshot)
+            setMine(analyzedSnapshot)
+            
+            // Save the analyzed snapshot to the database
+            const { error: saveError } = await supa
+              .from("views_snapshots")
+              .upsert({
+                user_id: userId,
+                pillars: analyzedSnapshot.pillars,
+                top_issues: analyzedSnapshot.top_issues,
+                summary_message: ""
+              })
+            if (saveError) {
+              console.error("Error saving analyzed snapshot:", saveError)
+            }
+          } catch (error) {
+            console.error("Error analyzing survey:", error)
+            // Fall back to default if analysis fails
+            const defaultSnapshot = {
+              pillars: {
+                economy: { score: 50, rationale: "Survey analysis failed - using default" },
+                social: { score: 50, rationale: "Survey analysis failed - using default" },
+                environment: { score: 50, rationale: "Survey analysis failed - using default" },
+                governance: { score: 50, rationale: "Survey analysis failed - using default" },
+                foreign: { score: 50, rationale: "Survey analysis failed - using default" }
+              },
+              top_issues: []
+            }
+            setMine(defaultSnapshot)
+          }
+        } else {
+          // No survey data, show message to complete survey
+          console.log("No survey data found")
+          setMine(null)
         }
-        setMine(defaultSnapshot)
       }
     } else {
       console.error("Error loading snapshot:", snapErr)
@@ -217,6 +257,48 @@ function ViewsInner() {
     setShowRefreshAnimation(false)
   }
 
+  const handleDebugAnalyze = async () => {
+    if (debugAnalyzing) return
+
+    setDebugAnalyzing(true)
+    try {
+      const supa = supabaseBrowser()
+      const { data: { session } } = await supa.auth.getSession()
+      
+      if (!session) {
+        toast.error("Please sign in to analyze survey")
+        return
+      }
+
+      const response = await fetch("/api/debug/analyze-survey", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to analyze survey")
+      }
+
+      const result = await response.json()
+      console.log("Debug analysis result:", result)
+      
+      // Reload data to show the new analysis
+      await loadData()
+      
+      toast.success("Survey analysis completed!")
+      
+    } catch (error: any) {
+      console.error("Debug analysis error:", error)
+      toast.error(error.message || "Failed to analyze survey")
+    } finally {
+      setDebugAnalyzing(false)
+    }
+  }
+
   const handleRefreshParty = async () => {
     if (refreshingParty) return
 
@@ -280,13 +362,22 @@ function ViewsInner() {
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-xl font-semibold">Views</h1>
             {tab === "mine" && (
-              <button
-                onClick={handleRefreshViews}
-                disabled={refreshing}
-                className="h-10 px-4 rounded-lg bg-black text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-neutral-800 transition-colors"
-              >
-                {refreshing ? "Refreshing..." : "Refresh"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRefreshViews}
+                  disabled={refreshing}
+                  className="h-10 px-4 rounded-lg bg-black text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-neutral-800 transition-colors"
+                >
+                  {refreshing ? "Refreshing..." : "Refresh"}
+                </button>
+                <button
+                  onClick={handleDebugAnalyze}
+                  disabled={debugAnalyzing}
+                  className="h-10 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                >
+                  {debugAnalyzing ? "Analyzing..." : "Debug Analyze"}
+                </button>
+              </div>
             )}
             {tab === "party" && (
               <button
@@ -372,7 +463,21 @@ function ViewsInner() {
           <PageTransition>
             {!mine ? (
               <FadeIn>
-                <div className="text-sm text-neutral-600">No snapshot yet. Complete the survey to generate your starter profile.</div>
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-2xl">📊</span>
+                  </div>
+                  <h2 className="text-lg font-semibold mb-2">Complete Your Political Profile</h2>
+                  <p className="text-sm text-neutral-600 mb-4">
+                    Take our 5-question survey to discover your political positioning across key pillars and get personalized insights.
+                  </p>
+                  <button 
+                    onClick={() => window.location.href = '/survey'}
+                    className="h-11 px-6 rounded-lg bg-black text-white text-sm font-medium hover:bg-neutral-800 transition-colors"
+                  >
+                    Start Survey
+                  </button>
+                </div>
               </FadeIn>
             ) : (
               <div className="space-y-6">

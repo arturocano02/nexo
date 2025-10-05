@@ -33,18 +33,21 @@ const rateLimit = new Map<string, { count: number; resetTime: number }>()
 
 // Topic inference keywords for fallback
 const TOPIC_KEYWORDS = {
-  'immigration': ['immigration', 'migrants', 'asylum', 'refugees', 'borders', 'visa'],
-  'housing': ['housing', 'homes', 'homeless', 'rent', 'mortgage', 'property', 'affordable housing'],
-  'nhs': ['nhs', 'health', 'healthcare', 'hospitals', 'doctors', 'nurses', 'medical'],
-  'economy': ['economy', 'economic', 'recession', 'inflation', 'growth', 'gdp', 'budget'],
-  'education': ['education', 'schools', 'universities', 'students', 'teachers', 'tuition'],
-  'environment': ['environment', 'climate', 'green', 'carbon', 'renewable', 'pollution'],
-  'taxation': ['tax', 'taxes', 'taxation', 'income tax', 'corporation tax', 'vat'],
-  'crime': ['crime', 'police', 'justice', 'prisons', 'criminal', 'safety'],
-  'foreign_policy': ['foreign policy', 'international', 'diplomacy', 'trade deals', 'alliances'],
-  'brexit': ['brexit', 'eu', 'europe', 'single market', 'customs union'],
-  'welfare': ['welfare', 'benefits', 'universal credit', 'social security', 'poverty'],
-  'defense': ['defense', 'military', 'armed forces', 'nato', 'security']
+  'immigration': ['immigration', 'migrants', 'asylum', 'refugees', 'borders', 'visa', 'migration', 'illegal immigration'],
+  'housing': ['housing', 'homes', 'homeless', 'rent', 'mortgage', 'property', 'affordable housing', 'homelessness', 'rental', 'buying homes'],
+  'nhs': ['nhs', 'health', 'healthcare', 'hospitals', 'doctors', 'nurses', 'medical', 'health service', 'waiting lists'],
+  'economy': ['economy', 'economic', 'recession', 'inflation', 'growth', 'gdp', 'budget', 'cost of living', 'jobs', 'unemployment'],
+  'education': ['education', 'schools', 'universities', 'students', 'teachers', 'tuition', 'school funding', 'exams'],
+  'environment': ['environment', 'climate', 'green', 'carbon', 'renewable', 'pollution', 'climate change', 'net zero', 'emissions'],
+  'taxation': ['tax', 'taxes', 'taxation', 'income tax', 'corporation tax', 'vat', 'tax cuts', 'tax rises'],
+  'crime': ['crime', 'police', 'justice', 'prisons', 'criminal', 'safety', 'policing', 'sentencing', 'law and order'],
+  'foreign_policy': ['foreign policy', 'international', 'diplomacy', 'trade deals', 'alliances', 'gaza', 'ukraine', 'russia', 'china'],
+  'brexit': ['brexit', 'eu', 'europe', 'single market', 'customs union', 'european union', 'leaving eu'],
+  'welfare': ['welfare', 'benefits', 'universal credit', 'social security', 'poverty', 'benefits system', 'social care'],
+  'defense': ['defense', 'military', 'armed forces', 'nato', 'security', 'defence', 'army', 'navy', 'air force'],
+  'transport': ['transport', 'trains', 'buses', 'roads', 'rail', 'public transport', 'infrastructure', 'hs2'],
+  'energy': ['energy', 'electricity', 'gas', 'power', 'energy bills', 'renewable energy', 'nuclear'],
+  'politics': ['politics', 'government', 'parliament', 'mp', 'minister', 'election', 'voting', 'democracy']
 }
 
 // Parse topic tag from AI response
@@ -261,6 +264,10 @@ If the user says 'I don't care about X, let's discuss Y' or 'what about Y instea
 
 If the user asks 'are you even listening?' - you've failed to follow their topic. Apologize and engage with their current topic.
 
+If the user says 'let's talk about [topic]' or 'what do you think about [topic]' - immediately engage with that topic.
+
+If the user expresses frustration with your responses, acknowledge it and pivot to their actual concern.
+
 Treat the survey as background only. Do not bring it up unless clearly relevant to the exact point.
 
 If they ask for a list or facts, answer directly on that topic.
@@ -274,6 +281,8 @@ After answering, briefly stress-test the claim or raise a trade-off, using UK ex
 If evidence conflicts, say so and show both sides in one line.
 
 NEVER ignore the user's topic. If they change topics, follow them immediately. If they express frustration about you not listening, acknowledge it and engage with their current topic.
+
+Be conversational and engaging - ask follow-up questions that advance the debate on their chosen topic.
 
 Web results and citations
 
