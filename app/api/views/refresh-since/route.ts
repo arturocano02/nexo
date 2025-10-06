@@ -56,8 +56,9 @@ const RefreshRequestSchema = z.object({
 const NexoAnalyzerSchema = z.object({
   top_issues: z.array(z.object({
     issue: z.string(),
-    mentions: z.number()
-  })),
+    mentions: z.number(),
+    user_quote: z.string().optional() // Make optional for backward compatibility
+  })).min(1), // Require at least one issue
   pillar_deltas: z.object({
     economy: z.number().min(-10).max(10),
     environment: z.number().min(-10).max(10),
@@ -65,7 +66,8 @@ const NexoAnalyzerSchema = z.object({
     governance: z.number().min(-10).max(10),
     foreign: z.number().min(-10).max(10)
   }),
-  summary_message: z.string()
+  pillar_evidence: z.record(z.string(), z.string()).optional(), // Make optional for backward compatibility
+  summary_message: z.string().startsWith("[NEXO-SUMMARY]")
 })
 
 // Rate limiting check
@@ -96,9 +98,12 @@ async function debouncedPartyRefresh() {
   lastPartyRefresh = now
   
   try {
-    await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000'}/api/party/refresh`, {
+    // Use relative URL path instead of absolute URL with environment variables
+    await fetch(`/api/party/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
+    }).catch(err => {
+      console.error("Party refresh fetch error:", err)
     })
   } catch (error) {
     console.error("Failed to refresh party aggregates:", error)
@@ -176,26 +181,56 @@ export async function POST(req: NextRequest) {
     }
 
     // Read analysis_state for this user
-    const { data: analysisState } = await supa
+    const { data: analysisState, error: analysisStateError } = await supa
       .from("analysis_state")
       .select("last_processed_message_id, last_processed_at")
       .eq("user_id", userId)
       .maybeSingle()
+    
+    console.log(`[RefreshSince] Analysis state for user ${userId}:`, analysisState || "Not found")
+    
+    // If analysis_state doesn't exist, create it
+    let forceFullAnalysis = false
+    if (!analysisState && !analysisStateError) {
+      console.log(`[RefreshSince] Creating new analysis_state for user ${userId}`)
+      const { error: createError } = await supa
+        .from("analysis_state")
+        .insert({
+          user_id: userId,
+          last_processed_at: null,
+          last_processed_message_id: null
+        })
+      
+      if (createError) {
+        console.error(`[RefreshSince] Error creating analysis_state:`, createError)
+      }
+      
+      // Force a full analysis of all messages when analysis_state is created for the first time
+      forceFullAnalysis = true
+      console.log(`[RefreshSince] First refresh - will analyze all messages`)
+    }
 
     // Determine reference point for new messages
     let referencePoint: string | null = null
-    if (analysisState?.last_processed_message_id) {
+    if (forceFullAnalysis) {
+      // For first-time analysis, don't use any reference point to get all messages
+      referencePoint = null
+      console.log(`[RefreshSince] Forcing full analysis of all messages`)
+    } else if (analysisState?.last_processed_message_id) {
       referencePoint = analysisState.last_processed_message_id
+      console.log(`[RefreshSince] Using last_processed_message_id as reference: ${referencePoint}`)
     } else if (analysisState?.last_processed_at) {
       referencePoint = analysisState.last_processed_at
+      console.log(`[RefreshSince] Using last_processed_at as reference: ${referencePoint}`)
     } else {
       // No previous processing, use lookback window
       const cutoffDate = new Date()
       cutoffDate.setDate(cutoffDate.getDate() - lookbackDays)
       referencePoint = cutoffDate.toISOString()
+      console.log(`[RefreshSince] No previous processing, using lookback window: ${referencePoint}`)
     }
 
-    // Query ONLY new messages since reference point
+    // Query messages based on reference point
     let messagesQuery = supa
       .from("messages")
       .select("id, content, role, created_at")
@@ -203,25 +238,84 @@ export async function POST(req: NextRequest) {
       .order("created_at", { ascending: true })
       .limit(maxMessages)
 
-    if (analysisState?.last_processed_message_id) {
-      // Use message ID for precise tracking
+    // If forcing full analysis, don't apply any filters (get all messages)
+    if (forceFullAnalysis) {
+      console.log(`[RefreshSince] Forcing full analysis - getting all messages`)
+    }
+    // Check for message ID reference first (most precise)
+    else if (analysisState?.last_processed_message_id) {
+      console.log(`[RefreshSince] Querying messages after ID: ${analysisState.last_processed_message_id}`)
       messagesQuery = messagesQuery.gt("id", analysisState.last_processed_message_id)
-    } else {
-      // Use timestamp
+    } 
+    // Fall back to timestamp if no message ID
+    else if (referencePoint) {
+      console.log(`[RefreshSince] Querying messages after timestamp: ${referencePoint}`)
       messagesQuery = messagesQuery.gt("created_at", referencePoint)
+    }
+    // If no reference point at all, just get the latest messages
+    else {
+      console.log(`[RefreshSince] No reference point, getting latest ${maxMessages} messages`)
     }
 
     const { data: messages, error: messagesErr } = await messagesQuery
 
     if (messagesErr) {
+      console.error(`[RefreshSince] Error querying messages:`, messagesErr)
       throw messagesErr
+    }
+    
+    console.log(`[RefreshSince] Found ${messages?.length || 0} new messages to analyze`)
+    
+    // Debug: Log first few messages if any
+    if (messages && messages.length > 0) {
+      console.log(`[RefreshSince] First message:`, {
+        id: messages[0].id,
+        created_at: messages[0].created_at,
+        role: messages[0].role,
+        content_preview: messages[0].content.substring(0, 50) + '...'
+      })
     }
 
     if (!messages || messages.length === 0) {
+      console.log(`[RefreshSince] No new messages found for user ${userId}`)
+      
+      // Check if we have any messages at all
+      const { data: allMessages, error: allMsgError } = await supa
+        .from("messages")
+        .select("id")
+        .eq("conversation_id", conversation.id)
+        .limit(1)
+      
+      if (allMsgError) {
+        console.error(`[RefreshSince] Error checking for any messages:`, allMsgError)
+      }
+      
+      // If we have no messages at all, it's a new user - force a refresh by ignoring the "no messages" check
+      if (allMessages && allMessages.length === 0) {
+        console.log(`[RefreshSince] No messages at all - new user. Will force analysis of survey data.`)
+        
+        // For new users, try to analyze their survey data instead
+        const { data: surveyData } = await supa
+          .from("survey_responses")
+          .select("responses")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          
+        if (surveyData) {
+          console.log(`[RefreshSince] Found survey data for new user, will analyze`)
+          // We'll handle this in a separate function later
+          // For now, continue to return the current snapshot
+        } else {
+          console.log(`[RefreshSince] No survey data found for new user`)
+        }
+      }
+      
       // Return current snapshot with no changes
       const { data: currentSnapshot } = await supa
         .from("views_snapshots")
-        .select("pillars, top_issues")
+        .select("pillars, top_issues, summary_message")
         .eq("user_id", userId)
         .maybeSingle()
 
@@ -236,7 +330,8 @@ export async function POST(req: NextRequest) {
             governance: { score: 50, rationale: "Default starting point" },
             foreign: { score: 50, rationale: "Default starting point" }
           },
-          top_issues: []
+          top_issues: [],
+          summary_message: ""
         },
         changes: {
           pillarsDelta: { economy: 0, social: 0, environment: 0, governance: 0, foreign: 0 },
@@ -247,7 +342,220 @@ export async function POST(req: NextRequest) {
     }
 
     if (!openai) {
-      return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 503 })
+      console.error("[RefreshSince] OpenAI API key not configured, using fallback analysis")
+      // Instead of returning an error, use fallback analysis
+      // Analyze messages to find political content
+      const allUserMessages = messages.filter(m => m.role === 'user');
+      
+      // Extract topic-specific messages
+      const envMessages = allUserMessages.filter(m => 
+        m.content.toLowerCase().includes("environment") || 
+        m.content.toLowerCase().includes("climate") ||
+        m.content.toLowerCase().includes("green") ||
+        m.content.toLowerCase().includes("pollution")
+      );
+      
+      const econMessages = allUserMessages.filter(m => 
+        m.content.toLowerCase().includes("econom") || 
+        m.content.toLowerCase().includes("tax") ||
+        m.content.toLowerCase().includes("spend") ||
+        m.content.toLowerCase().includes("budget") ||
+        m.content.toLowerCase().includes("job")
+      );
+      
+      const socialMessages = allUserMessages.filter(m => 
+        m.content.toLowerCase().includes("social") || 
+        m.content.toLowerCase().includes("health") ||
+        m.content.toLowerCase().includes("nhs") ||
+        m.content.toLowerCase().includes("education") ||
+        m.content.toLowerCase().includes("welfare")
+      );
+      
+      const foreignMessages = allUserMessages.filter(m => 
+        m.content.toLowerCase().includes("foreign") || 
+        m.content.toLowerCase().includes("international") ||
+        m.content.toLowerCase().includes("war") ||
+        m.content.toLowerCase().includes("peace") ||
+        m.content.toLowerCase().includes("immigration") ||
+        m.content.toLowerCase().includes("palestine") ||
+        m.content.toLowerCase().includes("israel") ||
+        m.content.toLowerCase().includes("gaza")
+      );
+      
+      const govMessages = allUserMessages.filter(m => 
+        m.content.toLowerCase().includes("govern") || 
+        m.content.toLowerCase().includes("democra") ||
+        m.content.toLowerCase().includes("parliament") ||
+        m.content.toLowerCase().includes("election") ||
+        m.content.toLowerCase().includes("vote")
+      );
+      
+      // Create top issues array based on what was found
+      const topIssues = [];
+      
+      if (envMessages.length > 0) {
+        topIssues.push({
+          issue: "Environmental Policy",
+          mentions: envMessages.length,
+          user_quote: envMessages[0].content
+        });
+      }
+      
+      if (econMessages.length > 0) {
+        topIssues.push({
+          issue: "Economic Policy",
+          mentions: econMessages.length,
+          user_quote: econMessages[0].content
+        });
+      }
+      
+      if (socialMessages.length > 0) {
+        topIssues.push({
+          issue: "Social Policy",
+          mentions: socialMessages.length,
+          user_quote: socialMessages[0].content
+        });
+      }
+      
+      if (foreignMessages.length > 0) {
+        topIssues.push({
+          issue: "Foreign Policy",
+          mentions: foreignMessages.length,
+          user_quote: foreignMessages[0].content
+        });
+      }
+      
+      if (govMessages.length > 0) {
+        topIssues.push({
+          issue: "Governance",
+          mentions: govMessages.length,
+          user_quote: govMessages[0].content
+        });
+      }
+      
+      // If no specific topics found, use the first user message
+      if (topIssues.length === 0 && allUserMessages.length > 0) {
+        topIssues.push({
+          issue: "Political Views",
+          mentions: 1,
+          user_quote: allUserMessages[0].content
+        });
+      }
+      
+      // Create pillar deltas based on message content
+      const fallbackAnalysis = {
+        top_issues: topIssues,
+        pillar_deltas: { 
+          // Check for specific mentions and give appropriate deltas
+          economy: econMessages.length > 0 ? (econMessages[0].content.includes("tax") ? 5 : -5) : 0,
+          environment: envMessages.length > 0 ? -5 : 0, // Assume pro-environment is more left-leaning
+          social: socialMessages.length > 0 ? -3 : 0,
+          governance: govMessages.length > 0 ? 2 : 0,
+          foreign: foreignMessages.length > 0 ? (foreignMessages[0].content.includes("palestine") ? -4 : 2) : 0
+        },
+        pillar_evidence: {
+          economy: econMessages.length > 0 ? econMessages[0].content : "",
+          environment: envMessages.length > 0 ? envMessages[0].content : "",
+          social: socialMessages.length > 0 ? socialMessages[0].content : "",
+          governance: govMessages.length > 0 ? govMessages[0].content : "",
+          foreign: foreignMessages.length > 0 ? foreignMessages[0].content : ""
+        },
+        summary_message: "[NEXO-SUMMARY] Your views have been updated based on your recent conversation. " + 
+          (envMessages.length > 0 ? `You expressed interest in environmental topics: "${envMessages[0].content.substring(0, 50)}..." ` : "") +
+          (econMessages.length > 0 ? `You discussed economic issues: "${econMessages[0].content.substring(0, 50)}..." ` : "") +
+          (foreignMessages.length > 0 ? `You shared views on foreign policy: "${foreignMessages[0].content.substring(0, 50)}..." ` : "") +
+          "These statements have been reflected in your political profile."
+      }
+      
+      // Skip to delta conversion
+      const deltaData = {
+        pillarsDelta: fallbackAnalysis.pillar_deltas,
+        topIssuesDelta: fallbackAnalysis.top_issues.map((issue: any) => ({
+          op: "add" as const,
+          title: issue.issue,
+          summary: `Mentioned ${issue.mentions} time(s)`
+        }))
+      }
+      
+      // Continue with snapshot merging
+      const { data: currentSnapshot } = await supa
+        .from("views_snapshots")
+        .select("pillars, top_issues")
+        .eq("user_id", userId)
+        .maybeSingle()
+      
+      // Default snapshot if none exists
+      const defaultSnapshot = {
+        pillars: {
+          economy: { score: 50, rationale: "Default starting point" },
+          social: { score: 50, rationale: "Default starting point" },
+          environment: { score: 50, rationale: "Default starting point" },
+          governance: { score: 50, rationale: "Default starting point" },
+          foreign: { score: 50, rationale: "Default starting point" }
+        },
+        top_issues: []
+      }
+      
+      // Merge deltas with 0-100 clamping
+      const mergedSnapshot = mergeDeltas(currentSnapshot || defaultSnapshot, deltaData)
+      console.log("[RefreshSince] Merged snapshot (fallback):", JSON.stringify(mergedSnapshot, null, 2))
+      
+      // Save the merged snapshot
+      const { error: updateErr } = await supa
+        .from("views_snapshots")
+        .upsert({
+          user_id: userId,
+          pillars: mergedSnapshot.pillars,
+          top_issues: mergedSnapshot.top_issues,
+          summary_message: fallbackAnalysis.summary_message
+        })
+      
+      if (updateErr) {
+        throw updateErr
+      }
+      
+      // Update analysis state
+      if (messages.length > 0) {
+        const lastMessage = messages[messages.length - 1]
+        await supa
+          .from("analysis_state")
+          .upsert({
+            user_id: userId,
+            last_processed_message_id: lastMessage.id,
+            last_processed_at: new Date().toISOString(),
+            last_refresh_result: { processedCount: messages.length, mode: "fallback" }
+          })
+      }
+      
+      // Add message to conversation
+      await supa
+        .from("messages")
+        .insert({
+          conversation_id: conversation.id,
+          user_id: userId,
+          role: "assistant",
+          content: fallbackAnalysis.summary_message
+        })
+      
+      // Record the update
+      await supa
+        .from("view_updates")
+        .insert({
+          user_id: userId,
+          source: "refresh_since",
+          delta: deltaData
+        })
+      
+      // Trigger party refresh (fire and forget)
+      debouncedPartyRefresh()
+      
+      return NextResponse.json({
+        ok: true,
+        processedCount: messages.length,
+        snapshot: mergedSnapshot,
+        changes: deltaData,
+        note: "Fallback analysis used (OpenAI not configured)"
+      })
     }
 
     // Prepare conversation context for OpenAI
@@ -257,18 +565,18 @@ export async function POST(req: NextRequest) {
 
     console.log(`[RefreshSince] Analyzing ${messages.length} new messages for user ${userId}`)
 
-    // Step 4: Single Nexo Analyzer call (OpenAI, temp ~0.2)
+    // Step 4: Single Nexo Analyzer call with GPT-4o for better analysis
     const analyzerResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o", // Use full GPT-4o for better analysis
       messages: [
         { 
           role: "system", 
           content: NEXO_ANALYZER_PROMPT
         },
-        { role: "user", content: `Analyze this political conversation:\n\n${conversationText}` }
+        { role: "user", content: `Analyze this political conversation carefully and extract all political views:\n\n${conversationText}` }
       ],
       temperature: 0.2,
-      max_tokens: 800
+      max_tokens: 1000 // Increased token limit for more detailed analysis
     })
 
     const analyzerText = analyzerResponse.choices[0]?.message?.content
@@ -293,11 +601,22 @@ export async function POST(req: NextRequest) {
     // Convert analyzer format to existing delta format
     const deltaData = {
       pillarsDelta: analyzerData.pillar_deltas,
-      topIssuesDelta: analyzerData.top_issues.map((issue: any) => ({
-        op: "add" as const,
-        title: issue.issue,
-        summary: `Mentioned ${issue.mentions} time(s)`
-      }))
+      pillarEvidence: analyzerData.pillar_evidence || {}, // Store evidence if available
+      topIssuesDelta: analyzerData.top_issues.map((issue: any) => {
+        // Create a more detailed summary that includes both the issue and the user's quote
+        const quote = issue.user_quote || "";
+        const truncatedQuote = quote.length > 100 ? 
+          `${quote.substring(0, 100)}...` : 
+          quote;
+          
+        return {
+          op: "add" as const,
+          title: issue.issue,
+          summary: truncatedQuote ? 
+            `"${truncatedQuote}"` : 
+            `You expressed views on ${issue.issue.toLowerCase()} ${issue.mentions > 1 ? `${issue.mentions} times` : ''}`
+        };
+      })
     }
 
     // Step 6: Merge deltas
@@ -347,7 +666,7 @@ export async function POST(req: NextRequest) {
       .from("view_updates")
       .insert({
         user_id: userId,
-        source: "chat",
+        source: "refresh_since",
         delta: deltaData
       })
 
@@ -373,6 +692,8 @@ export async function POST(req: NextRequest) {
 
     // Step 8: Update analysis_state
     const newestMessageId = messages[messages.length - 1].id
+    console.log(`[RefreshSince] Updating analysis_state with last message ID: ${newestMessageId}`)
+    
     const { error: stateError } = await supa
       .from("analysis_state")
       .upsert({
@@ -382,14 +703,17 @@ export async function POST(req: NextRequest) {
         last_refresh_result: {
           pillarsDelta: deltaData.pillarsDelta,
           topIssuesDelta: deltaData.topIssuesDelta,
-          processed: messages.length
+          processed: messages.length,
+          timestamp: new Date().toISOString()
         },
         updated_at: new Date().toISOString()
       })
 
     if (stateError) {
-      console.error("Failed to update analysis state:", stateError)
+      console.error("[RefreshSince] Failed to update analysis state:", stateError)
       // Don't fail the whole operation for this
+    } else {
+      console.log(`[RefreshSince] Successfully updated analysis_state`)
     }
 
     // Step 9: Fire-and-forget party aggregate refresh

@@ -20,6 +20,7 @@ export const ANALYTICS_EVENTS = {
   
   // Views events
   VIEWS_REFRESHED: { action: 'views_refreshed', category: 'views' },
+  VIEWS_FORCE_REFRESHED: { action: 'views_force_refreshed', category: 'views' },
   VIEWS_TAB_SWITCHED: { action: 'views_tab_switched', category: 'views' },
   VIEWS_CHART_VIEWED: { action: 'views_chart_viewed', category: 'views' },
   

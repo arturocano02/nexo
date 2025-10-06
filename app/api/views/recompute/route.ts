@@ -318,7 +318,7 @@ export async function POST(req: NextRequest) {
 
     // 8. Fire-and-forget aggregates refresh
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000'}/api/aggregates/refresh`, {
+      await fetch(`/api/aggregates/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })

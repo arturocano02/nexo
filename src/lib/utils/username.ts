@@ -32,25 +32,36 @@ export function generateUsernameFromEmail(email: string): string {
  */
 export async function isUsernameAvailable(username: string, supabase: any, excludeUserId?: string): Promise<boolean> {
   try {
-    const { data, error } = await supabase
+    // First check if username is valid
+    if (!username || username.length < 3 || username.length > 20) {
+      return false
+    }
+    
+    // Check if username contains only allowed characters
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return false
+    }
+    
+    // Check if username exists in database
+    const query = supabase
       .from('profiles')
       .select('id')
       .eq('display_name', username)
-      .neq('id', excludeUserId || '')
-      .single()
     
-    if (error && error.code === 'PGRST116') {
-      // No rows found - username is available
-      return true
+    // If we're checking for an existing user (e.g. when updating), exclude their ID
+    if (excludeUserId) {
+      query.neq('id', excludeUserId)
     }
+    
+    const { data, error } = await query
     
     if (error) {
       console.error('Username check error:', error)
       return false
     }
     
-    // Username exists
-    return false
+    // Username is available if no data was returned
+    return !data || data.length === 0
   } catch (error) {
     console.error('Username check error:', error)
     return false

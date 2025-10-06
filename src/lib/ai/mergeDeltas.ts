@@ -3,6 +3,7 @@ import { z } from "zod"
 // Schema for the delta structure
 export const DeltaSchema = z.object({
   pillarsDelta: z.record(z.string(), z.number().min(-10).max(10)),
+  pillarEvidence: z.record(z.string(), z.string()).optional(),
   topIssuesDelta: z.array(z.object({
     op: z.enum(["add", "remove", "update"]),
     title: z.string().optional(),
@@ -71,9 +72,14 @@ export function mergeDeltas(
     const deltaValue = delta.pillarsDelta[pillar] ?? 0
     const newScore = Math.max(0, Math.min(100, base + deltaValue))
     
+    // If we have pillar evidence, use it for the rationale
+    const evidence = delta.pillarEvidence?.[pillar]
+    
     newPillars[pillar] = {
       score: newScore,
-      rationale: currentSnapshot?.pillars?.[pillar]?.rationale || `Updated based on recent conversation`
+      rationale: evidence 
+        ? `Based on your statement: "${evidence}"` 
+        : (currentSnapshot?.pillars?.[pillar]?.rationale || `Updated based on recent conversation`)
     }
   }
 

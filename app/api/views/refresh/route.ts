@@ -272,7 +272,7 @@ export async function POST(req: NextRequest) {
 
     // Fire-and-forget aggregates refresh (with debounce)
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000'}/api/aggregates/refresh`, {
+      await fetch(`/api/aggregates/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })

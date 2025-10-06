@@ -129,7 +129,14 @@ function AuthPageInner() {
         // Create user profile with generated username
         if (signupData.user) {
           try {
-            const username = await generateUniqueUsername(email, supa)
+            // Generate a simple username from email without checking uniqueness
+            // We'll just use the part before @ and add a random number
+            const localPart = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 15)
+            const randomSuffix = Math.floor(Math.random() * 1000)
+            const username = `${localPart}${randomSuffix}`
+            
+            console.log(`Creating profile for user ${signupData.user.id} with username ${username}`)
+            
             const { error: profileError } = await supa
               .from('profiles')
               .insert({
@@ -140,6 +147,8 @@ function AuthPageInner() {
             if (profileError) {
               console.error('Profile creation error:', profileError)
               // Don't throw - profile can be created later
+            } else {
+              console.log(`Profile created successfully for ${username}`)
             }
           } catch (profileError) {
             console.error('Profile creation error:', profileError)
@@ -147,7 +156,11 @@ function AuthPageInner() {
           }
         }
         
-        setMessage("Check your email for the confirmation link!")
+        // Save terms acceptance in localStorage
+        localStorage.setItem("nexo_terms_accepted", "true")
+        
+        // Show detailed confirmation message
+        setMessage("Account created! Please check your email for the confirmation link. You need to click this link to verify your account before signing in.")
       } else {
         const { error } = await supa.auth.signInWithPassword({
           email,
@@ -311,7 +324,19 @@ function AuthPageInner() {
                   ? "text-red-600 bg-red-50 border border-red-200" 
                   : "text-green-600 bg-green-50 border border-green-200"
               }`}>
-                {message}
+                {message.includes("confirmation link") ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center">
+                      <svg className="w-5 h-5 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      <strong>Check your email!</strong>
+                    </div>
+                    <p>{message}</p>
+                  </div>
+                ) : (
+                  message
+                )}
               </div>
             )}
 

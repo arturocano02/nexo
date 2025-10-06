@@ -57,6 +57,8 @@ export default function PoliticalCompass({ point }: PoliticalCompassProps) {
             tick={{ fontSize: 11, fill: "#374151" }}
             axisLine={{ stroke: "#000", strokeWidth: 2 }}
             tickLine={{ stroke: "#000" }}
+            label={{ value: "Left ← Economic Scale → Right", position: "bottom", offset: 15 }}
+            hide={false}
           />
           
           <YAxis 
@@ -67,6 +69,8 @@ export default function PoliticalCompass({ point }: PoliticalCompassProps) {
             tick={{ fontSize: 11, fill: "#374151" }}
             axisLine={{ stroke: "#000", strokeWidth: 2 }}
             tickLine={{ stroke: "#000" }}
+            label={{ value: "Libertarian ↑ Social Scale ↓ Authoritarian", angle: -90, position: "left", offset: 20 }}
+            hide={false}
           />
           
           {/* Plot all parties */}
@@ -82,10 +86,10 @@ export default function PoliticalCompass({ point }: PoliticalCompassProps) {
           {/* User's position - make it very distinct */}
           <Scatter
             data={data}
-            fill="#FF6B6B"
-            r={12}
-            stroke="#fff"
-            strokeWidth={3}
+            fill="#FF0000"
+            r={15}
+            stroke="#000"
+            strokeWidth={4}
             className="animate-pulse"
           />
           
@@ -106,15 +110,7 @@ export default function PoliticalCompass({ point }: PoliticalCompassProps) {
         </ScatterChart>
       </ResponsiveContainer>
       
-      {/* Axis labels */}
-      <div className="mt-3 text-center">
-        <div className="text-sm font-medium text-neutral-700 mb-1">
-          Left ← Economic Scale → Right
-        </div>
-        <div className="text-sm font-medium text-neutral-700">
-          Libertarian ↑ Social Scale ↓ Authoritarian
-        </div>
-      </div>
+      {/* Removed axis labels since they're now on the graph */}
       
       {/* Legend */}
       <div className="mt-4 space-y-3">

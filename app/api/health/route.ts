@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { getSupabaseConfig, isOpenAIConfigured } from "@/src/lib/env"
+import { getSupabaseUrl, getSupabaseAnonKey, isOpenAIConfigured } from "@/src/lib/env"
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -14,7 +14,8 @@ const REQUIRED_TABLES = [
 
 export async function GET(req: NextRequest) {
   try {
-    const { url, anonKey } = getSupabaseConfig()
+    const url = getSupabaseUrl()
+    const anonKey = getSupabaseAnonKey()
     const supa = createClient(url, anonKey, { auth: { persistSession: false } })
 
     // Check database connection and tables
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
     if (auth) {
       try {
         // Create authenticated client
-        const authSupa = createClient(url, anonKey, {
+        const authSupa = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
           global: { headers: { Authorization: auth } },
           auth: { persistSession: false },
         })
